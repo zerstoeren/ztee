@@ -1,7 +1,7 @@
 package main
 
 import (
-	"./zutil"
+	"github.com/zmap/ztee/zutil"
 	"flag"
 	"log"
 	"os"
