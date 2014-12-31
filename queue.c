@@ -19,19 +19,15 @@ void* push_back(char* data, queue *my_queue){
     node *new_node = malloc(sizeof(node));
     new_node->prev = NULL;
     new_node->next = NULL;
-    new_node->data = data;
-    fprintf(stderr, "got past initiliazation\n");
+    new_node->data = strdup(data);
     //lock
     if(is_empty(my_queue)){
-        fprintf(stderr, "is empty\n");
         my_queue->front = new_node;
         my_queue->back = new_node;
-        fprintf(stderr, "end of if statement\n");
     }else{
         my_queue->back->next = new_node;
         new_node->prev = my_queue->back;
         my_queue->back = new_node;
-        fprintf(stderr, "end of else statement\n");
     }
     //unlock 
     fprintf(stderr, "at end of push_back\n");
@@ -54,6 +50,22 @@ node* pop_front(queue *my_queue){
         return temp;
     }
     fprintf(stderr, "done with pop\n");
+    //unlock
+}
+
+node* get_front(queue *my_queue){
+    //lock
+    node *temp = malloc(sizeof(node));
+    temp = my_queue->front;
+    return temp;
+    //unlock
+}
+
+node* get_back(queue *my_queue){
+    //lock
+    node *temp = malloc(sizeof(node));
+    temp = my_queue->back;
+    return temp;
     //unlock
 }
 
