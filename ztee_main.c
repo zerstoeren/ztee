@@ -28,10 +28,8 @@ int read_in(queue* my_queue);
 //zero indexed
 void find_IP(char* my_string);
 
-void write_stdout(char* ip_address);
-
 //writes a csv string out to csv file
-void write_out_to_file(queue *my_queue);
+void write_out_to_file(char* data);
 
 //figure out how many fields are present if it is a csv
 void figure_out_fields(char* data);
@@ -43,7 +41,7 @@ void figure_out_fields(char* data);
 void input_is_csv(queue *my_queue);
 
 //check that the output file is either in a csv form or json form
-int output_file_is_csv();
+void output_file_is_csv();
 
 int main(int argc, char *argv[]){
    
@@ -58,6 +56,8 @@ int main(int argc, char *argv[]){
         switch(ch){
             case 'o':
                 output_filename = optarg;
+                fprintf(stderr, "found filename\n");
+                fprintf(stderr, "%s\n", output_filename);
                 output_file = (FILE *)fopen(output_filename, "w");
                 if(output_file == NULL){
                     perror("can't open file");
@@ -109,8 +109,12 @@ int main(int argc, char *argv[]){
     delete_queue(my_queue);
     check_queue(my_queue);*/
     read_in(my_queue);
+    //BEFORE READING IN REST OF QUEUE
     //figure out if input is csv
-    //
+    //find where ip field is 
+    //AFTER
+    //take ip and print to stdout
+    //write to output file is there is one
     fprintf(stderr, "Finished with reading in\n");
     check_queue(my_queue);
     /*fprintf(stderr, "free\n");
@@ -140,6 +144,20 @@ int read_in(queue* my_queue){
         check_queue(my_queue);
         fprintf(stderr, "finished pushing back\n");
     }
+    fprintf(stderr, "out of while loop\n");
+    input_is_csv(my_queue);
+    output_file_is_csv();
+    fprintf(stderr, "input is csv?: %i\n", input_csv);
+    fprintf(stderr, "what is ip_field? %i\n", ip_field);
+    while(!is_empty(my_queue)){
+        node* temp = malloc(sizeof(node));
+        temp = pop_front(my_queue);
+        fprintf(stderr, "about to find IP\n");
+       find_IP(temp->data);
+        fprintf(stderr, "found IP\n");
+       write_out_to_file(temp->data);
+       //clean up node 
+    }
     return 1;
 }
 
@@ -153,38 +171,37 @@ void find_IP(char* my_string){
     int length;
     int i = 0;
     int j = 0;
-    if(ip_field ==0){
-        found=strchr(my_string, ',');
-        length = strlen(my_string) - strlen(found); 
-        for(i; i < length; i++){
-            temp += my_string[i];
-        }
-        fprintf(stdout, "%s\n", temp);
+    if(!input_csv){
+       fprintf(stdout, "%s\n", my_string);
+       fprintf(stderr, "found ip, exiting first if\n");
+       return;
     }
-    new_found = found;
-    for(i; i <= ip_field; i++){
-       found = new_found; 
-       new_found= strchr(found, ',');
-    } 
-    length = strlen(found) - strlen(new_found); 
-    for(i; i < length; i++){
-        temp += my_string[i];
+    found = strdup(my_string);
+    new_found = strchr(found, ',');
+    fprintf(stderr, "beofre first for statement\n");
+    for(i; i <= number_of_fields; i++){
+        if(i == ip_field && new_found){
+            length = strlen(found) - strlen(new_found); 
+            //what to set i to
+            temp = malloc(sizeof(char*)*(length+1));
+            strncpy(temp, found, length);
+            temp[length] = '\0';
+            fprintf(stdout, "%s", temp);
+            return;
+        }else if(i == ip_field){
+            fprintf(stdout, "%s", found); 
+            return;
+        }
+        found = new_found+1;
+        new_found = strchr(found, ',');
+
     }
     fprintf(stdout, "%s\n", temp);
 
 }
-
-void write_stdout(char* ip_address){
-    fprintf(fprintf, "%s\n", ip_address);
-}
-
-void write_out_to_file(queue *my_queue){
+void write_out_to_file(char* data){
 //take whatever is in the front of the linked list and parse it out to the
 //outputfile
-    if(is_empty(my_queue)){
-        fprintf(stderr, "Nothing to print out to file because nothing in queue\n");
-    }
-    node* temp = pop_front(my_queue);
     char *found;
     char *new_found;
     char *temp_string;
@@ -192,14 +209,14 @@ void write_out_to_file(queue *my_queue){
     int i =0; 
     int j =0;
     if(output_csv){
-        if(!input_csv){
-            fprintf(stdout, "%s\n", temp->data);
+        /*if(!input_csv){
+            fprintf(stdout, "%s\n", data);
         }else{
            //need to parse out by comma 
-            found=strchr(temp->data, ',');
-            length = strlen(temp->data) - strlen(found); 
+            found=strchr(data, ',');
+            length = strlen(data) - strlen(found); 
             for(i; i < length; i++){
-                temp_string += temp->data[i];
+                temp_string += data[i];
             }
             fprintf(output_file, "%s\n", temp_string);
             i = 0;
@@ -211,7 +228,8 @@ void write_out_to_file(queue *my_queue){
                 }
                 fprintf(output_file, "%s\n", temp_string);
            }
-        }
+        }*/
+        fprintf(output_file, "%s", data);
     }else{
        //output as json 
     }
@@ -229,36 +247,58 @@ void figure_out_fields(char* data){
    int i =0;
    int count = 0;
    int length;
-   found = strchr(data, ',');
+   fprintf(stderr, "in figure_out_fields\n");
+   /*found = strchr(data, ',');
    length = strlen(data) - strlen(found); 
-   for(i; i < length; i++){
-       temp += data[i];
-   }
-
-   if(!strcmp(temp, saddr)){    
+   fprintf(stderr, "found: %s\n", found);
+   temp = malloc(sizeof(char*)*(length+1));
+   strncpy(temp, data, length);
+   temp[length+1] = '\0';
+    
+   fprintf(stderr, "temp: %s\n", temp);
+   fprintf(stderr, "saddr: %s\n", saddr);
+   if(!strncmp(temp, saddr, 5)){    
        ip_field = 0;
+       fprintf(stderr, "set ip_field to %i\n", ip_field);
        ip_field_found = 1;
-   }
-   while(found){ 
-       new_found = strchr(found, ',');
+   }*/
+   found = data;
+   found = found+1;
+   fprintf(stderr, "found right before while loop %s\n", found);
+   new_found = strchr(found, ',');
+   fprintf(stderr, "new_found %s\n", new_found);
+   while(new_found){ 
+       fprintf(stderr, "found right at startwhile loop %s\n", found);
+       fprintf(stderr, "new_found %s\n", new_found);
        if(!ip_field_found){
            length = strlen(found) - strlen(new_found); 
            temp = NULL;
            //what to set i to
-           for(i; i < length; i++){
-               temp += found[i];
-           }
+           temp = malloc(sizeof(char*)*(length+1));
+           strncpy(temp, found, length);
 
-           if(!strcmp(temp, saddr)){    
+           fprintf(stderr, "temp: %s\n", temp);
+           if(!strncmp(temp, saddr, 5)){    
                ip_field = count;
+               fprintf(stderr, "set ip_field to %i\n", ip_field);
                ip_field_found = 1;
            }
        }
-       found = new_found;
+       found = new_found+1;
        new_found = NULL;
        count++;
+       new_found = strchr(found, ',');
    }
    number_of_fields = count++;
+   fprintf(stderr, "number of fields %i\n", number_of_fields);
+   if(!ip_field_found){
+       fprintf(stderr, "found: %s\n", found);
+       if(!strncmp(found, saddr, 5)){    
+           ip_field = number_of_fields;
+           fprintf(stderr, "set ip_field to %i\n", ip_field);
+           ip_field_found = 1;
+       }
+   }
 }
 
 void input_is_csv(queue *my_queue){
@@ -266,11 +306,14 @@ void input_is_csv(queue *my_queue){
     //only needs to be run one time and on the first node
     //because the first node will have the different fields or
     //just the ip address`
+    fprintf(stderr, "in input_is_csv\n");
     node *temp = malloc(sizeof(node));  
     temp = get_front(my_queue);
     
     char *found;
     found = strchr(temp->data, ',');
+    fprintf(stderr, "found comman\n");
+    fprintf(stderr, "%s\n", found);
     if(!found){
         input_csv = 0;     
     }else{
@@ -278,19 +321,26 @@ void input_is_csv(queue *my_queue){
         input_csv = 1;
         pop_front(my_queue);
         figure_out_fields(temp->data);
-        fprintf(output_file, "%s\n", temp->data);
+        fprintf(output_file, "%s", temp->data);
     }
+    fprintf(stderr, "out of input_is_csv\n");
 }
 
-int output_file_is_csv(){
+void output_file_is_csv(){
     //check that the output file is either in a csv form or json form
+    fprintf(stderr, "outputfile is csv\n");
     int length = strlen(output_filename);
-    char *end_of_file = output_filename[length-3];
-    char *csv = "csv";
-    char *json = "json";
-    if(!strcmp(end_of_file, csv) || !strcmp(end_of_file, json)){
+    char *end_of_file = malloc(sizeof(char*) *4);
+    strncpy(end_of_file, output_filename+(length - 3), 3);
+    end_of_file[4] = "\0"; 
+    fprintf(stderr, "%s\n", end_of_file);
+    char *csv = "csv\n";
+    char *json = "jso\n";
+    if(!end_of_file) fprintf(stderr, "WTF\n");
+    if(!strncmp(end_of_file, csv, 3) && !strncmp(end_of_file, json, 3)){
         print_error();
     }
-    if(!strcmp(end_of_file, csv)) output_csv = 1;
-    if(!strcmp(end_of_file, json)) output_csv = 0;
+    if(!strncmp(end_of_file, csv, 3)) output_csv = 1;
+    if(!strncmp(end_of_file, json, 3)) output_csv = 0;
+    fprintf(stderr, "output_csv: %i\n", output_csv);
 }
