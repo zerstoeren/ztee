@@ -5,14 +5,13 @@
 pthread_mutex_t queue_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queue_empty = PTHREAD_COND_INITIALIZER;
 
-queue* queue_init(queue *q){
+queue* queue_init(){
     //call with queue_init(&queue);
     queue *p = malloc(sizeof(queue));
     p->front = NULL;
     p->back = NULL;
     p->size = 0;
     return p;
-    //*q = p;
 }
 
 int is_empty(queue *my_queue){
@@ -21,7 +20,7 @@ int is_empty(queue *my_queue){
     return 0;
 }
 
-void* push_back(char* data, queue *my_queue){
+void push_back(char* data, queue *my_queue){
     node *new_node = malloc(sizeof(node));
     new_node->prev = NULL;
     new_node->next = NULL;
@@ -33,8 +32,8 @@ void* push_back(char* data, queue *my_queue){
         my_queue->front = new_node;
         my_queue->back = new_node;
     }else{
-        my_queue->back->next = new_node;
-        new_node->prev = my_queue->back;
+        my_queue->back->next = (struct node*)new_node;
+        new_node->prev = (struct node*)my_queue->back;
         my_queue->back = new_node;
     }
     my_queue->size++;
@@ -53,7 +52,7 @@ node* pop_front(queue *my_queue){
     }
     node *temp = my_queue->front;
     fprintf(stderr, "set temp\n");
-    my_queue->front = temp->next;
+    my_queue->front = (node*)temp->next;
     if(my_queue->front != NULL){
         fprintf(stderr, "set front to nex\n");
         my_queue->front->prev = NULL;
@@ -91,24 +90,27 @@ node* get_back(queue *my_queue){
     //unlock
 }
 
-void* delete_queue(queue *my_queue){
+void delete_queue(queue *my_queue){
     while(!is_empty(my_queue)){
        pop_front(my_queue); 
     }
     //need to free my_queue in main
 }
-void* check_queue(queue *my_queue){
+void check_queue(queue *my_queue){
     node *temp = my_queue->front;
     while(temp){
         fprintf(stderr, "Data %s\n", temp->data);
         
-        temp = temp->next;
+        temp = (node*)temp->next;
     }
     fprintf(stderr, "done with checkqueue\n");
 }
 
-void* get_size(queue *my_queue, int buffer_size){
+int get_size(queue *my_queue){
+    int buffer_size;
    pthread_mutex_lock(&queue_lock);
    buffer_size = my_queue->size;
    pthread_mutex_unlock(&queue_lock);
+   return buffer_size;
+   fprintf(stderr, "got size\n");
 }

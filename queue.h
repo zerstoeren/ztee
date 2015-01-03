@@ -17,10 +17,10 @@ typedef struct ztee_queue{
 
 queue* queue_init();
 int is_empty(queue *my_queue);
-void* push_back(char* data, queue *my_queue);
+void push_back(char* data, queue *my_queue);
 node* pop_front(queue *my_queue);
 node* get_front(queue *my_queue);
 node* get_back(queue *my_queue);
-void* delete_queue(queue *my_queue);
-void* check_queue(queue *my_queue);
-void* get_size(queue *my_queue, int buffer_size);
+void delete_queue(queue *my_queue);
+void check_queue(queue *my_queue);
+int get_size(queue *my_queue);
