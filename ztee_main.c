@@ -9,8 +9,12 @@ char *output_filename = NULL;
 char *monitor_filename = NULL;
 FILE *output_file = NULL;
 FILE *monitor_output_file = NULL;
-//keeps track if input file is csv
+
 pthread_mutex_t queue_size_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t lock_queue = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t read_in_waiting = PTHREAD_COND_INITIALIZER;
+
+//keeps track if input file is csv
 int input_csv = 0;
 //keeps track if output file is csv
 int output_csv = 0;
@@ -35,67 +39,70 @@ pthread_t threads[3];
 //one thread reads in
 //one thread writes out and parses
 
+//pops next element and determines what to do
+//if queue is empty and read_in is finished, then
+//it exits
+void *process_queue (void* my_q);
 
-void *process_queue(void* my_q);
+void print_error ();
 
-void print_error();
 //uses fgets to read from stdin and add it to the queue
-void *read_in(void* my_q);
+void *read_in (void* my_q);
+
 //does the same as find UP but finds only successful IPs, determined by the 
 //is_successful field and flag
-void find_successful_IP(char* my_string);
+void find_successful_IP (char* my_string);
+
 //finds IP in the string of csv and sends it to stdout for zgrab
 //you need to know what position is the csv string the ip field is in
 //zero indexed
-void find_IP(char* my_string);
+void find_IP (char* my_string);
 
 //writes a csv string out to csv file
-void write_out_to_file(char* data);
+//fprintf(stderr, "Is empty inside if %i\n", is_empty(my_queue));
+void write_out_to_file (char* data);
 
 //figure out how many fields are present if it is a csv
-void figure_out_fields(char* data);
+void figure_out_fields (char* data);
 
 //checks if input is csv or just ip
 //only needs to be run one time and on the first node
 //because the first node will have the different fields or
 //just the ip address`
-void input_is_csv(queue *my_queue);
+int input_is_csv (queue *my_queue);
 
 //check that the output file is either in a csv form or json form
 //throws error is it is not either
 //NOTE: JSON OUTPUT NOT IMPLEMENTED
-void output_file_is_csv();
+void output_file_is_csv ();
 
-void print_thread_error();
+void print_thread_error ();
 
-void *monitor_ztee(void *my_q);
-int main(int argc, char *argv[]){
+//monitor code for ztee
+//executes every second
+void *monitor_ztee (void *my_q);
+
+int main (int argc, char *argv[]){
    
-
     int ch = 0;
     int index;
 
-   /*if (argc < 2){
-        print_error();
-   }*/
    const struct option longOpts[] = {
-        {"find-success-only", no_argument, 0, 'f'},
-        {"output-file", required_argument, 0, 'o'},
-        {"monitor", required_argument, 0, 'm'},
-        {0,0,0,0}
+        { "find-success-only", no_argument, 0, 'f' },
+        { "output-file", required_argument, 0, 'o' },
+        { "monitor", required_argument, 0, 'm' },
+        { 0, 0, 0, 0}
    };
-   while(ch != -1){
-       ch=getopt_long(argc, argv, "fo:m:", longOpts, &index);
+   while (ch != -1){
+       ch = getopt_long (argc, argv, "fo:m:", longOpts, &index);
        switch(ch){
             case 'f':
                 find_success_only = 1;
                 break;
             case 'o':
                 output_filename = optarg;
-                fprintf(stderr, "found filename\n");
-                fprintf(stderr, "%s\n", output_filename);
                 output_file = (FILE *)fopen(output_filename, "w");
-                if(output_file == NULL){
+                if (output_file == NULL) {
                     perror("can't open file");
                     exit(0);
                 }
@@ -103,10 +110,8 @@ int main(int argc, char *argv[]){
             case 'm':
                 monitor = 1;
                 monitor_filename = optarg;
-                fprintf(stderr, "found filename\n");
-                fprintf(stderr, "%s\n", monitor_filename);
                 monitor_output_file = (FILE *)fopen(monitor_filename, "w");
-                if(monitor_output_file == NULL){
+                if (monitor_output_file == NULL) {
                     perror("can't open file");
                     exit(0);
                 }
@@ -120,83 +125,101 @@ int main(int argc, char *argv[]){
 
     queue* my_queue;
     my_queue = queue_init();
-    //BEFORE PROCESSING REST OF QUEUE
-    //figure out if input is csv
-    //find where ip field is 
-    //THEN
-    //take ip and print to stdout
-    //write to output file if there is one
-    
-    //begins reading in and adding to queue
     int y = pthread_create(&threads[0], NULL, read_in, my_queue);
     char* read = "read thread\n";
-    if(y){
+
+    if (y) {
         print_thread_error(read);
         exit(1);
     }
 
-    input_is_csv(my_queue);
-    output_file_is_csv();
+    int returned = input_is_csv(my_queue);
 
+    if (returned) {
+        return 0;
+    }
 
     int a = pthread_create(&threads[1], NULL, process_queue, my_queue);
     char* process = "process thread\n";
-    if(a){
+
+    if (a) {
         print_thread_error(process);
         exit(1);
     }
-    if(monitor){
+
+    if (monitor) {
         int z = pthread_create(&threads[2], NULL, monitor_ztee, my_queue);
         char* monitor_thread = "monitor thread\n";
         if(z){
             print_thread_error(monitor_thread);
             exit(1);
         }
-        fprintf(stderr, "created monitor thread\n");
     }
+
     int g;
     for(g=0; g < 3; g++){
        pthread_join(threads[g], NULL); 
     }
-    fprintf(stderr, "about to exit main\n"); 
+
 }
 
-void *process_queue(void* my_q){
+void *process_queue (void* my_q)
+{
     queue *my_queue = (queue *)my_q;
-    fprintf(stderr, "processing queue\n");
-    while(!is_empty(my_queue) || !done){
+
+    while (!is_empty(my_queue) || !done){
+
         node* temp = malloc(sizeof(node));
-        temp = pop_front(my_queue);
-        fprintf(stderr, "about to find IP\n");
-        if(!input_csv){
-            fprintf(stdout, "%s\n", temp->data);
-            fprintf(stderr, "found ip, exiting first if\n");
-        }else if(find_success_only){
+
+        pthread_mutex_lock(&lock_queue);
+        check_queue(my_queue);
+        while (!done && is_empty(my_queue)) {
+            pthread_cond_wait(&read_in_waiting, &lock_queue);
+        }
+
+        if (done && is_empty(my_queue)) {
+            process_done = 1;
+            fflush(output_file);
+            fclose(output_file);
+            free(my_queue);
+            return NULL;
+        }
+
+        if (!is_empty(my_queue)) {
+            temp = pop_front(my_queue);
+        }
+
+        pthread_mutex_unlock(&lock_queue);
+
+        if (!input_csv) {
+            fprintf(stdout, "%s", temp->data);
+        }else if (find_success_only) {
             find_successful_IP(temp->data);
-        }else{
+        }else {
             find_IP(temp->data);
         }
-        fprintf(stderr, "found IP\n");
        write_out_to_file(temp->data);
-       //clean up node 
        free(temp);
     }
-    fprintf(stderr, "processing done\n");
     process_done = 1;
     fflush(output_file);
     fclose(output_file);
     free(my_queue);
+    fprintf(stderr, "finished processing\n");
+    pthread_exit(NULL);
     return NULL;
 }
 
-void print_error(){
+void print_error ()
+{
     //includes incorrect output file format
     //
-    printf("You messed it up\n");
+    printf("Problem with file format\n");
     exit(0);
 }
 
-void *read_in(void* my_q){
+void *read_in (void* my_q)
+{
 //read in from stdin and add to back of linked list
      
     char* input = NULL;
@@ -204,26 +227,29 @@ void *read_in(void* my_q){
     queue *my_queue = (queue*)my_q;
     input = malloc(sizeof(char) *1000);
     
-    fprintf(stderr, "in read in\n");
     //geline
-    while(getline(&input, &length, stdin) != -1){
-        fprintf(stderr, "before OUTPUT: %s\n", input);
-        check_queue(my_queue);
+    while (getline(&input, &length, stdin) > 0) {
+        pthread_mutex_lock(&lock_queue);
         push_back(input, my_queue); 
-        fprintf(stderr, "pushed back\n");
         check_queue(my_queue);
-        fprintf(stderr, "finished pushing back\n");
+        pthread_mutex_unlock(&lock_queue);
+
         pthread_mutex_lock(&queue_size_lock);
         total_read_in++;
         read_in_last_sec++;
         pthread_mutex_unlock(&queue_size_lock);
     }
-    fprintf(stderr, "out of while loop\n");
+
+    pthread_mutex_lock(&lock_queue);
     done = 1;
+    pthread_cond_signal(&read_in_waiting);
+    pthread_mutex_unlock(&lock_queue);
+    pthread_exit(NULL);
     return NULL;
 }
 
-void find_successful_IP(char* my_string){
+void find_successful_IP (char* my_string)
+{
 
     char *found; 
     char *new_found;
@@ -234,49 +260,35 @@ void find_successful_IP(char* my_string){
     int is_successful = 0;
     found = strdup(my_string);
     new_found = strchr(found, ',');
-    fprintf(stderr, "beofre first for statement in success\n");
-    for(i=0; i <= number_of_fields; i++){
-        fprintf(stderr, "beginning of while found %s\n", found);
-        if(i == success_field && new_found){
-            fprintf(stderr, "first if statement\n");
+
+    for (i=0; i <= number_of_fields; i++) {
+        if (i == success_field && new_found) {
             length = strlen(found) - strlen(new_found); 
-            //what to set i to
             is_this_IP_successful = malloc(sizeof(char*)*(length+1));
             strncpy(is_this_IP_successful, found, length);
             is_successful = atoi(is_this_IP_successful);
-            fprintf(stderr, "found %s\n", found);
-            fprintf(stderr, "is ip successfule? %i\n", is_successful);
             if(!is_successful) return;
-        }else if(i == success_field){
-            fprintf(stderr, "second if statement\n");
+        } else if(i == success_field) {
            is_successful = atoi( found );
-            fprintf(stderr, "found %s\n", found);
-           fprintf(stderr, "is ip successfule? %i\n", is_successful);
            if(!is_successful) return;
-           //is_this_IP_successful = atoi(is_this_IP_successful);
         }
-        if(i == ip_field && new_found){
-            fprintf(stderr, "third if statement\n");
+
+        if (i == ip_field && new_found) {
             length = strlen(found) - strlen(new_found); 
-            //what to set i to
             this_IP = malloc(sizeof(char*)*(length+1));
             strncpy(this_IP, found, length);
             this_IP[length] = '\0';
-        }else if(i == ip_field){
-            fprintf(stderr, "fourth if statement\n");
+        } else if(i == ip_field) {
             this_IP = found;
         }
-        fprintf(stderr, "about to increment\n");
-        fprintf(stderr, "found %s\n", found);
-        fprintf(stderr, "new_found %s\n", new_found);
-        if(new_found) found = new_found+1;
+
+        if (new_found) found = new_found+1;
         new_found = strchr(found, ',');
     }
-    fprintf(stdout, "out of while \n");
-    fprintf(stdout, "THIS IP: %s\n", this_IP);
 }
 
-void find_IP(char* my_string){
+void find_IP (char* my_string)
+{
    //finds IP in the string of csv and sends it to stdout for zgrab
    //you need to know what position is the csv string the ip field is in
    //zero indexed
@@ -287,19 +299,18 @@ void find_IP(char* my_string){
     int i;
     found = strdup(my_string);
     new_found = strchr(found, ',');
-    fprintf(stderr, "beofre first for statement\n");
-    for(i = 0; i <= number_of_fields; i++){
-        if(i == ip_field && new_found){
+
+    for (i = 0; i <= number_of_fields; i++) {
+        if (i == ip_field && new_found) {
             temp = NULL;
             length = strlen(found) - strlen(new_found); 
-            //what to set i to
             temp = malloc(sizeof(char*)*(length+1));
             strncpy(temp, found, length);
             temp[length] = '\0';
-            fprintf(stdout, "%s", temp);
+            fprintf(stdout, "%s\n", temp);
             return;
-        }else if(i == ip_field){
-            fprintf(stdout, "%s", found); 
+        } else if(i == ip_field) {
+            fprintf(stdout, "%s\n", found); 
             return;
         }
         if(new_found) found = new_found+1;
@@ -309,52 +320,46 @@ void find_IP(char* my_string){
     fprintf(stdout, "%s\n", temp);
 
 }
-void write_out_to_file(char* data){
+
+void write_out_to_file (char* data)
+{
 //take whatever is in the front of the linked list and parse it out to the
 //outputfile
     fprintf(output_file, "%s", data);
 }
 
-void figure_out_fields(char* data){
+void figure_out_fields (char* data)
+{
    //number_of_fields = number of commas + 1 
    //check each substring if it is the same as saddr
    //set ip_field
    char *temp;
-   char* saddr = "saddr";
+   char* saddr = "input saddr";
    char* found;
    char* is_successful = "success\0";
    char *new_found;
    int count = 0;
    int length;
-   fprintf(stderr, "in figure_out_fields\n");
    found = data;
-   fprintf(stderr, "found right before while loop %s\n", found);
    new_found = strchr(found, ',');
-   fprintf(stderr, "new_found %s\n", new_found);
-   while(new_found){ 
-       fprintf(stderr, "found right at startwhile loop %s\n", found);
-       fprintf(stderr, "new_found %s\n", new_found);
-       if(!ip_field_found){
+
+   while (new_found) { 
+       if (!ip_field_found) {
            length = strlen(found) - strlen(new_found); 
            temp = NULL;
-           //what to set i to
            temp = malloc(sizeof(char*)*(length+1));
            strncpy(temp, found, length);
 
-           fprintf(stderr, "temp: %s\n", temp);
-           if(!strncmp(temp, saddr, 5)){    
+           if (!strncmp(temp, saddr, 5)) {    
                ip_field = count;
-               fprintf(stderr, "set ip_field to %i\n", ip_field);
                ip_field_found = 1;
            }
-           //will find the success_field regardless
        }
        
-       if(!success_found){
-           if(!strncmp(temp, is_successful, 7)){
+       if (!success_found) {
+           if (!strncmp(temp, is_successful, 7)) {
                success_found = 1;
                success_field = count;
-               fprintf(stderr, "set success_field to %i\n", success_field);
            }
        }
        found = new_found+2;
@@ -362,43 +367,41 @@ void figure_out_fields(char* data){
        count++;
        new_found = strchr(found, ',');
    }
+
    number_of_fields = count++;
-   fprintf(stderr, "number of fields %i\n", number_of_fields);
-   if(!ip_field_found){
-       fprintf(stderr, "found: %s\n", found);
-       if(!strncmp(found, saddr, 5)){    
+   if (!ip_field_found) {
+       if (!strncmp(found, saddr, 5)) {    
            ip_field = number_of_fields;
-           fprintf(stderr, "set ip_field to %i\n", ip_field);
            ip_field_found = 1;
        }
    }
-   if(!success_found){
-       if(!strncmp(found, is_successful, 7)){
+   if (!success_found) {
+       if (!strncmp(found, is_successful, 7)) {
            success_found = 1;
            success_field = number_of_fields;
-           fprintf(stderr, "set success_field to %i\n", success_field);
        }
    }
 }
 
-void input_is_csv(queue *my_queue){
+int input_is_csv (queue *my_queue)
+{
     //checks if input is csv or just ip
     //only needs to be run one time and on the first node
     //because the first node will have the different fields or
     //just the ip address`
-    fprintf(stderr, "in input_is_csv\n");
-    while(is_empty(my_queue));
+    while (is_empty(my_queue) && !done);
+    if (is_empty(my_queue) && done) {
+        return 1;    
+    }
+
     node *temp = malloc(sizeof(node));  
     temp = get_front(my_queue);
     
     char *found;
     found = strchr(temp->data, ',');
-    fprintf(stderr, "found comman\n");
-    fprintf(stderr, "%s\n", found);
-    if(!found){
+    if (!found) {
         input_csv = 0;     
-    }else{
-        //if the input is a csv write out the first line to the outputfile
+    }else {
         node *to_delete = malloc(sizeof(node*));
         input_csv = 1;
         to_delete = pop_front(my_queue);
@@ -406,65 +409,62 @@ void input_is_csv(queue *my_queue){
         fprintf(output_file, "%s", temp->data);
         free(to_delete);
     }
-    fprintf(stderr, "out of input_is_csv\n");
     output_file_is_csv();
+    return 0;
 }
 
-void output_file_is_csv(){
-    //check that the output file is either in a csv form or json form
-    fprintf(stderr, "outputfile is csv\n");
+void output_file_is_csv ()
+{
     int length = strlen(output_filename);
     char *end_of_file = malloc(sizeof(char*) *4);
     strncpy(end_of_file, output_filename+(length - 3), 3);
     end_of_file[4] = '\0';
-    fprintf(stderr, "%s\n", end_of_file);
     char *csv = "csv\n";
     char *json = "jso\n";
-    if(!end_of_file) fprintf(stderr, "WTF\n");
     if(!strncmp(end_of_file, csv, 3) && !strncmp(end_of_file, json, 3)){
         print_error();
     }
     if(!strncmp(end_of_file, csv, 3)) output_csv = 1;
     if(!strncmp(end_of_file, json, 3)) output_csv = 0;
-    fprintf(stderr, "output_csv: %i\n", output_csv);
-
 }
 
-void print_thread_error(char* string){
+void print_thread_error (char* string)
+{
     fprintf(stderr, "Could not create thread %s\n", string);
     return;
 }
 
-void *monitor_ztee(void* my_q){
+void *monitor_ztee (void* my_q)
+{
     queue *my_queue = (queue *)my_q;
-    fprintf(stderr, "in monitor code\n");
     fprintf(monitor_output_file,"Total_read_in, read_in_last_sec, read_per_sec_avg, buffer_current_size, buffer_avg_size\n");
-    fprintf(stderr, "read in first line\n");
     int read_per_sec_avg = 0, buffer_current_size = 0, buffer_avg_size = 0;
     total_read_in = 0;
     double count_seconds = 1;
-    while(!process_done){
+    while (!process_done) {
         read_in_last_sec = 0;
         buffer_current_size = 0;
-        sleep(1);
          
         pthread_mutex_lock(&queue_size_lock);
 
         if(!process_done){
             buffer_current_size = get_size(my_queue);
-            buffer_avg_size = (buffer_current_size + buffer_avg_size)/count_seconds;
-            read_per_sec_avg = (read_per_sec_avg + read_in_last_sec)/count_seconds;
-            fprintf(monitor_output_file, "%i,%i,%i,%i,%i\n", total_read_in, read_in_last_sec,
-                read_per_sec_avg, buffer_current_size, buffer_avg_size);
+            buffer_avg_size = (buffer_current_size + buffer_avg_size)
+                /count_seconds;
+            read_per_sec_avg = (read_per_sec_avg + read_in_last_sec)
+                /count_seconds;
+            fprintf(monitor_output_file, "%i,%i,%i,%i,%i\n", total_read_in, 
+                    read_in_last_sec, read_per_sec_avg, buffer_current_size, 
+                    buffer_avg_size);
         }
 
         pthread_mutex_unlock(&queue_size_lock);
         count_seconds++;
+        sleep(1);
 
     }
     fflush(monitor_output_file);
     fclose(monitor_output_file);
     pthread_exit(NULL);
-    return NULL;
     return NULL;
 }
