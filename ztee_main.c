@@ -125,13 +125,7 @@ int main(int argc, char *argv[]){
     //THEN
     //take ip and print to stdout
     //write to output file if there is one
-    /*int x = pthread_create(&read_in_thread, NULL, read_in, my_queue);
-    if(x){
-        print_thread_error();
-        exit(0);
-    }*/
     
-    pthread_t *read_thread, process_thread, monitor_thread;
     //begins reading in and adding to queue
     int y = pthread_create(&threads[0], NULL, read_in, my_queue);
     char* read = "read thread\n";
@@ -188,9 +182,6 @@ void process_queue(queue* my_queue){
        free(temp);
     }
     fprintf(stderr, "processing done\n");
-    if(monitor){
-        //pthread_cancel(&threads[2]);
-    }
     process_done = 1;
     free(my_queue);
 }
@@ -476,22 +467,26 @@ void print_thread_error(char* string){
 void monitor_ztee(queue* my_queue){
     fprintf(stderr, "in monitor code\n");
     fprintf(monitor_output_file,"Total_read_in, read_in_last_sec, read_per_sec_avg, buffer_current_size, buffer_avg_size\n");
+    fprintf(stderr, "read in first line\n");
     int read_per_sec_avg = 0, buffer_current_size = 0, buffer_avg_size = 0;
     total_read_in = 0;
     double count_seconds = 1;
     while(!process_done){
         read_in_last_sec = 0;
         buffer_current_size = 0;
-        //sleep(60);
-        get_size(my_queue, &buffer_current_size); 
-        buffer_avg_size = (buffer_current_size + buffer_avg_size)/count_seconds;
-        
+        sleep(1);
+         
         pthread_mutex_lock(&queue_size_lock);
-        read_per_sec_avg = (read_per_sec_avg + read_in_last_sec)/count_seconds;
-        fprintf(monitor_output_file, "%i,%i,%i,%i,%i\n", total_read_in, read_in_last_sec,
+
+        if(!process_done){
+            get_size(my_queue, &buffer_current_size); 
+            buffer_avg_size = (buffer_current_size + buffer_avg_size)/count_seconds;
+            read_per_sec_avg = (read_per_sec_avg + read_in_last_sec)/count_seconds;
+            fprintf(monitor_output_file, "%i,%i,%i,%i,%i\n", total_read_in, read_in_last_sec,
                 read_per_sec_avg, buffer_current_size, buffer_avg_size);
+        }
+
         pthread_mutex_unlock(&queue_size_lock);
-        //unlock
         count_seconds++;
 
     }
